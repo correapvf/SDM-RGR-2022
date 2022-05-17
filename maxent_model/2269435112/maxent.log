@@ -1,0 +1,43 @@
+Thu Mar 24 10:49:21 BRT 2022
+MaxEnt version 3.4.4
+Reading file ausence
+readGrid: max memory 1037959168, total allocated 16252928, free 14500968, used 1751960, increment 1751960
+Reading samples from presence
+Read samples: max memory 1037959168, total allocated 16252928, free 11193072, used 5059856, increment 3307896
+Adding samples to background in feature space
+Command line used:  -e D:/Users/paulo/maxent_temp/2269435112/ausence -s D:/Users/paulo/maxent_temp/2269435112/presence -o D:/Users/paulo/maxent_temp/2269435112 -m 500 -z -a plots=false pictures=false maximumbackground=963 outputformat=cloglog removeduplicates=false betamultiplier=1 autofeature=false linear=true quadratic=true product=false hinge=false threshold=true
+Command line to repeat: java density.MaxEnt nowarnings noprefixes nopictures outputdirectory=D:/Users/paulo/maxent_temp/2269435112 samplesfile=D:/Users/paulo/maxent_temp/2269435112/presence environmentallayers=D:/Users/paulo/maxent_temp/2269435112/ausence noremoveduplicates maximumbackground=963 noproduct threshold nohinge autorun novisible noautofeature noplots
+Species: species
+Layers: broadbpi_20_200 cos_aspect curvature depth finebpi_3_20 rift_dist sin_aspect slope vrm_011
+Layertypes: Continuous Continuous Continuous Continuous Continuous Continuous Continuous Continuous Continuous
+pictures: false
+outputdirectory: D:/Users/paulo/maxent_temp/2269435112
+samplesfile: D:/Users/paulo/maxent_temp/2269435112/presence
+environmentallayers: D:/Users/paulo/maxent_temp/2269435112/ausence
+removeduplicates: false
+maximumbackground: 963
+product: false
+threshold: true
+hinge: false
+autorun: true
+visible: false
+autofeature: false
+plots: false
+
+getSamples: max memory 1037959168, total allocated 16252928, free 11152008, used 5100920, increment 41064
+Making features
+makeFeatures: max memory 1037959168, total allocated 16252928, free 10719936, used 5532992, increment 432072
+species: 
+Regularization values: linear/quadratic/product: 0.050, categorical: 0.250, threshold: 1.000, hinge: 0.500
+231 samples
+Density: max memory 1037959168, total allocated 16252928, free 13043712, used 3209216, increment -2323776
+linearPredictor: max memory 1037959168, total allocated 16252928, free 13034152, used 3218776, increment 9560
+FeaturedSpace: max memory 1037959168, total allocated 16252928, free 13034152, used 3218776, increment 0
+Sequential: max memory 1037959168, total allocated 16252928, free 12943968, used 3308960, increment 90184
+Initial loss: 7.084226422097916
+Time since start: 1.365
+500: time = 1,221000 loss = 6,150572
+Resulting gain: 0.9336544537465192
+Projecting...
+Writing file D:\Users\paulo\maxent_temp\2269435112\species.csv
+Ending

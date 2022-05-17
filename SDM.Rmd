@@ -1,0 +1,688 @@
+
+
+---
+title: "SDM for Rio Grande Rise"
+author: "Paulo Vinicius Ferraz Correa"
+output: html_document
+---
+
+```{r load data, message=FALSE}
+library(raster)
+library(data.table)
+library(caret)
+library(corrplot)
+library(caretSDM)
+library(patchwork)
+library(ggtext)
+
+# Run SDM.R before to generate data
+load("modelos.RData")
+source("functions.R")
+
+# load raster
+conf.hybis <- raster("rasters/hybis_ensemble_confidence.tif")
+conf.shinkai <- raster("rasters/shinkai_ensemble_confidence.tif")
+p.hybis.pred <- stack(list.files("rasters", "^hybis_.*_pred\\.tif$", full.names = TRUE))
+p.shinkai.pred <- stack(list.files("rasters", "^shinkai_.*_pred\\.tif$", full.names = TRUE))
+p.hybis.prob <- stack(list.files("rasters", "^hybis_.*_presence\\.tif$", full.names = TRUE))
+p.shinkai.prob <- stack(list.files("rasters", "^shinkai_.*_presence\\.tif$", full.names = TRUE))
+
+# library(doSNOW)
+# cl <- makeSOCKcluster(4)
+# registerDoSNOW(cl)
+```
+
+
+
+# prepare data for plots
+```{r}
+library(ggplot2)
+library(gridExtra)
+library(rgdal)
+
+# shapefiles to plot contours, if needed
+# CH <- readOGR("shp/contour_Hybis.shp", layer = "contour_Hybis")
+# CH <- fortify(CH)
+# 
+# CS <- readOGR("shp/contour_Shinkai.shp", layer = "contour_Shinkai")
+# CS <- fortify(CS)
+
+new.order <- c(4, 8, 1, 5, 6, 2, 7, 9, 3)
+r.hybis <- r.hybis[[new.order]]
+r.shinkai <- r.shinkai[[new.order]]
+
+new.names <- c('Ensemble', 'GAM', 'BRT', 'MaxEnt', 'ANN', 'RF')
+names(p.hybis.prob) <- new.names
+names(p.shinkai.prob) <- new.names
+```
+
+
+
+# Check for correlation
+```{r}
+corrplot(M@corMatrix, type = 'lower', tl.pos = 'lt')
+corrplot(M@corMatrix, type = 'upper', method = 'number', tl.pos = 'n', add = TRUE, number.cex = 0.6)
+```
+
+**We should remove broadbpi as it has a high correlation**
+
+### VIFs
+```{r}
+M@results
+```
+
+**All VIFs (< 3) are good**
+
+
+
+```{r}
+plot(p.hybis.prob)
+```
+
+
+```{r}
+plot(p.hybis.pred)
+```
+
+
+```{r}
+plot(p.shinkai.prob)
+```
+
+
+```{r}
+plot(p.shinkai.pred)
+```
+
+
+```{r}
+plot(conf.hybis)
+plot(conf.shinkai)
+```
+
+
+# PLOT - probabilities
+```{r}
+new.names <- c('Ensemble', 'GAM', 'BRT', 'MaxEnt', 'ANN', 'RF')
+new.order <- c(6, 3, 4, 2, 5, 1)
+new.name.order <- new.names[new.order]
+
+tmp_names <- data.frame(variable = factor(new.name.order, levels = (new.name.order)),
+                        tag = letters[1:length(new.names)])
+```
+
+
+```{r}
+df <- sampleRegular(p.hybis.prob, 1e+05, asRaster = TRUE)
+df <- as.data.frame(df, xy = TRUE)
+
+breaks <- define_breaks(df, 3)
+
+
+df <- reshape2::melt(df, id.vars = c("x", "y") , na.rm = TRUE)
+df$variable <- factor(df$variable, levels = new.name.order)
+
+g <- ggplot(data=df, aes(x=x, y=y, fill=value)) +  
+  geom_tile() +
+  # geom_path(data = CH, aes(x = long, y = lat, group = group), color = "#828282", inherit.aes = FALSE,
+  #           lineend = "square", size = 0.2) +
+  facet_wrap(~ variable, ncol = 2) +
+  scale_fill_distiller(palette = "YlGnBu", direction = 1, limits = c(0, 1), breaks = seq(0,1,0.25),
+                       labels = function(x) sprintf("%5.2f", x)) +
+  labs(fill = "Likelihood") +
+  coord_fixed() +
+  scale_x_continuous(breaks = breaks$breakx, labels = breaks$labelx) +
+  scale_y_continuous(breaks = breaks$breaky, labels = breaks$labely) +
+  guides(fill = guide_externalticks(barheight = 10, ticks.colour = "black", frame.colour = "black", label.vjust = 0.4)) +
+  geom_text(data = tmp_names, mapping = aes(label = tag), inherit.aes = FALSE,
+            x = -Inf, y = Inf, hjust = -1, vjust = 1.5, size = 9.5/ggplot2:::.pt, fontface = "bold") +
+  geom_text(data = tmp_names, mapping = aes(label = paste0(variable, "  ")), inherit.aes = FALSE,
+            x = Inf, y = -Inf, hjust = 1, vjust = -1, size = 8/ggplot2:::.pt) +
+  theme_mapa()
+g
+# ggsave("hybis_prob.png", g, height = 16, width = 14, units = 'cm', dpi = 600)
+```
+
+```{r}
+df <- sampleRegular(p.shinkai.prob, 1e+05, asRaster = TRUE)
+df <- as.data.frame(df, xy = TRUE)
+
+breaks <- define_breaks(df, 3)
+
+
+df <- reshape2::melt(df, id.vars = c("x", "y") , na.rm = TRUE)
+df$variable <- factor(df$variable, levels = new.name.order)
+
+g <- ggplot(data=df, aes(x=x, y=y, fill=value)) +  
+  geom_tile() +
+  # geom_path(data = CS, aes(x = long, y = lat, group = group), color = "#828282", inherit.aes = FALSE,
+  #           lineend = "square", size = 0.2) +
+  facet_wrap(~ variable, ncol = 2) +
+  scale_fill_distiller(palette = "YlGnBu", direction = 1, limits = c(0, 1), breaks = seq(0,1,0.25),
+                       labels = function(x) sprintf("%5.2f", x)) +
+  labs(fill = "Likelihood") +
+  coord_fixed() +
+  scale_x_continuous(breaks = breaks$breakx, labels = breaks$labelx) +
+  scale_y_continuous(breaks = breaks$breaky, labels = breaks$labely) +
+  guides(fill = guide_externalticks(barheight = 10, ticks.colour = "black", frame.colour = "black", label.vjust = 0.4)) +
+  geom_text(data = tmp_names, mapping = aes(label = tag), inherit.aes = FALSE,
+            x = -Inf, y = Inf, hjust = -1, vjust = 1.5, size = 9.5/ggplot2:::.pt, fontface = "bold") +
+  geom_text(data = tmp_names, mapping = aes(label = paste0(variable, "  ")), inherit.aes = FALSE,
+            x = Inf, y = -Inf, hjust = 1, vjust = -1, size = 8/ggplot2:::.pt) +
+  theme_mapa()
+g
+# ggsave("shinkai_prob.png", g, height = 15, width = 14, units = 'cm', dpi = 600)
+```
+
+
+
+# PLOT - confidence interval
+```{r}
+new.names <- c('Ensemble', 'GAM', 'BRT', 'MaxEnt', 'ANN', 'RF')
+new.order <- c(6, 3, 4, 2, 5, 1)
+new.name.order <- new.names[new.order]
+
+tmp_names <- data.frame(variable = factor(new.name.order, levels = (new.name.order)),
+                        tag = letters[1:length(new.names)])
+```
+
+
+```{r}
+df <- sampleRegular(conf.hybis, 1e+05, asRaster = TRUE)
+df <- as.data.frame(df, xy = TRUE)
+breaks <- define_breaks(df, 3)
+df <- reshape2::melt(df, id.vars = c("x", "y") , na.rm = TRUE)
+
+df2 <- sampleRegular(conf.shinkai, 1e+05, asRaster = TRUE)
+df2 <- as.data.frame(df2, xy = TRUE)
+breaks2 <- define_breaks(df2, 3)
+df2 <- reshape2::melt(df2, id.vars = c("x", "y") , na.rm = TRUE)
+
+limits <- c(0, quantile(c(df$value, df2$value), 0.995))
+
+g <- ggplot(data=df, aes(x=x, y=y, fill=value)) +  
+  geom_tile() +
+  # geom_path(data = CH, aes(x = long, y = lat, group = group), color = "#828282", inherit.aes = FALSE,
+  #         lineend = "square", size = 0.2) +
+  scale_fill_distiller(palette = "RdYlGn", direction = -1, limits = limits) +
+  labs(fill = "Uncertainty", tag = "a") +
+  coord_fixed() +
+  scale_x_continuous(breaks = breaks$breakx, labels = breaks$labelx) +
+  scale_y_continuous(breaks = breaks$breaky, labels = breaks$labely) +
+  guides(fill = guide_externalticks(barheight = 5, ticks.colour = "black", frame.colour = "black", label.vjust = 0.4)) +
+  theme_mapa() +
+  theme(plot.tag = element_text(size = 9.5, face = "bold", hjust = -0.1), plot.tag.position = c(0, 1))
+
+g2 <- ggplot(data=df2, aes(x=x, y=y, fill=value)) +  
+  geom_tile() +
+  # geom_path(data = CS, aes(x = long, y = lat, group = group), color = "#828282", inherit.aes = FALSE,
+  #         lineend = "square", size = 0.2) +
+  scale_fill_distiller(palette = "RdYlGn", direction = -1, limits = limits) +
+  labs(fill = "Uncertainty", tag = "b") +
+  coord_fixed() +
+  scale_x_continuous(breaks = breaks2$breakx, labels = breaks2$labelx) +
+  scale_y_continuous(breaks = breaks2$breaky, labels = breaks2$labely) +
+  guides(fill = guide_externalticks(barheight = 5, ticks.colour = "black", frame.colour = "black", label.vjust = 0.4)) +
+  theme_mapa() +
+  theme(plot.tag = element_text(size = 9.5, face = "bold", hjust = -0.1), plot.tag.position = c(0, 1))
+
+gg <- (g | g2) +  plot_layout(guides = 'collect', widths = 1)
+  
+gg
+# ggsave("conf.png", gg, height = 5.8, width = 14, units = 'cm', dpi = 600)
+```
+
+
+
+# PLOT - enviroment data
+
+```{r}
+new.names <- c('Broad BPI', 'Northerness', 'Curvature', 'Depth', 'Fine BPI', 'Rift Distance', 'Easterness', 'Slope', 'Rugosity')
+new.order <- c(4, 8, 1, 5, 6, 2, 7, 9, 3)
+
+names.plot <- new.names[new.order]
+
+color.scales <- list(
+  scale_fill_distiller(palette = "Blues"),
+  scale_fill_distiller(palette = "Purples", direction = 1),
+  scale_fill_gradient2(low = "#a6611a", high = "#018571"),
+  scale_fill_gradient2(low = "#a6611a", high = "#018571"),
+  scale_fill_distiller(palette = "Blues", direction = 1),
+  scale_fill_gradient2(low = "#feebe2", high = "#7a0177"),
+  scale_fill_gradient2(low = "#feebe2", high = "#7a0177"),
+  scale_fill_distiller(palette = "Purples", direction = 1),
+  scale_fill_gradient2(low = "#0571b0", high = "#ca0020", mid = "grey90")
+)
+```
+
+```{r}
+df <- sampleRegular(r.hybis, 1e+05, asRaster = TRUE)
+df <- as.data.frame(df, xy = TRUE)
+
+breaks <- define_breaks(df, 3)
+
+df <- reshape2::melt(df, id.vars = c("x", "y") , na.rm = TRUE)
+df <- split(df, f = ~ variable)
+
+# scale curvature raster to be visible
+df[[9]]$value = plot_clamp(df[[9]]$value, c(0.0001, 0.9999))
+
+
+
+g <- list()
+for (i in 1:length(df)) {
+  g[[i]] <- ggplot(data=df[[i]], aes(x=x, y=y, fill=value)) +  
+    geom_tile() +
+    # geom_path(data = CH, aes(x = long, y = lat, group = group), color = "#828282", inherit.aes = FALSE,
+    #       lineend = "square", size = 0.2) +
+    color.scales[[i]] +
+    labs(fill = names.plot[i]) +
+    coord_fixed() +
+    scale_x_continuous(breaks = breaks$breakx, labels = breaks$labelx) +
+    scale_y_continuous(breaks = breaks$breaky, labels = breaks$labely) +
+    guides(fill = guide_externalticks(ticks.colour = "black", barheight = 5, barwidth = unit(3, "mm"), frame.colour = "black", label.vjust = 0.4)) +
+    theme_mapa() +
+    geom_text(label = letters[i], x = -Inf, y = Inf, hjust = -1, vjust = 1.5, size = 9.5/ggplot2:::.pt, fontface = "bold") +
+    theme(legend.margin = margin(0,0,0,0), legend.box.margin = margin(0,0,0,0),
+          legend.text = element_text(size=6), legend.title = element_text(size = 7),
+          legend.box.spacing = unit(2, "mm"), legend.justification = "left")
+}
+
+gg <- wrap_plots(g, ncol = 3)
+gg
+# ggsave("hybis_envs.png", gg, height = 12, width = 18, units = 'cm', dpi = 600)
+
+```
+
+
+
+```{r}
+df <- sampleRegular(r.shinkai, 1e+05, asRaster = TRUE)
+df <- as.data.frame(df, xy = TRUE)
+
+breaks <- define_breaks(df, 3)
+
+df <- reshape2::melt(df, id.vars = c("x", "y") , na.rm = TRUE)
+df <- split(df, f = ~ variable)
+
+# scale curvature raster to be visible
+df[[9]]$value = plot_clamp(df[[9]]$value, c(0.0001, 0.9999))
+
+
+
+g <- list()
+for (i in 1:length(df)) {
+  g[[i]] <- ggplot(data=df[[i]], aes(x=x, y=y, fill=value)) +  
+    geom_tile() +
+    color.scales[[i]] +
+    labs(fill = names.plot[i]) +
+    # geom_path(data = CS, aes(x = long, y = lat, group = group), color = "#828282", inherit.aes = FALSE,
+    #   lineend = "square", size = 0.2) +
+    coord_fixed() +
+    scale_x_continuous(breaks = breaks$breakx, labels = breaks$labelx) +
+    scale_y_continuous(breaks = breaks$breaky, labels = breaks$labely) +
+    guides(fill = guide_externalticks(ticks.colour = "black", barheight = 5, barwidth = unit(3, "mm"), frame.colour = "black", label.vjust = 0.4)) +
+    theme_mapa() +
+    geom_text(label = letters[i], x = -Inf, y = Inf, hjust = -1, vjust = 1.5, size = 9.5/ggplot2:::.pt, fontface = "bold") +
+    theme(legend.margin = margin(0,0,0,0), legend.box.margin = margin(0,0,0,0),
+          legend.text = element_text(size=6), legend.title = element_text(size = 7),
+          legend.box.spacing = unit(2, "mm"), legend.justification = "left")
+}
+
+gg <- wrap_plots(g, ncol = 3)
+gg
+# ggsave("shinkai_envs.png", gg, height = 12, width = 18, units = 'cm', dpi = 600)
+
+```
+
+
+
+
+
+
+# Evaluate
+```{r}
+library(lemon)
+
+new.names <- c("RF", "BRT", "MaxEnt", "ANN", "GAM")
+new.order <- c(1, 2, 3, 5, 4)
+new.name.order <- new.names[new.order]
+
+tmp_names <- data.frame(method = factor(new.name.order, levels = (new.name.order)),
+                        tag = letters[1:length(new.names)])
+
+df <- list()
+for (mod in ens$model.list) {
+  df[[mod$method]] <- calibration.plot(mod, shinkai, smoothingdf = 1)
+}
+names(df) <- new.names
+df <- df[new.order]
+
+predd <- rbindlist(lapply(df, `[[`, 1), idcol = "method")
+obs <- rbindlist(lapply(df, `[[`, 2), idcol = "method")
+
+predd[, method := factor(method, levels = new.name.order)]
+obs[, method := factor(method, levels = new.name.order)]
+
+g <- ggplot(predd, aes(x = x, y = y, ymin = pmax(0, y - 2*se), ymax = pmin(1, y + 2*se))) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  geom_line(color="skyblue") +
+  geom_ribbon(color="orange", fill = NA) +
+  geom_rug(aes(x = pred, color = obs), data = obs, inherit.aes = FALSE, show.legend = FALSE) +
+  scale_color_manual(values = c("orange", "skyblue")) +
+  scale_x_continuous(expand = expansion(0.01)) +
+  facet_rep_wrap(~ method) + xlab("Predicted probability of presence") +
+  ylab("Probability of presence") +
+  geom_text(data = tmp_names, mapping = aes(label = tag), inherit.aes = FALSE,
+          x = -Inf, y = Inf, hjust = -1, vjust = 1.5, size = 9.5/ggplot2:::.pt, fontface = "bold") +
+  geom_text(data = tmp_names, mapping = aes(label = paste0(method, "  ")), inherit.aes = FALSE,
+          x = Inf, y = -Inf, hjust = 1, vjust = -1.5, size = 8/ggplot2:::.pt) +
+  theme_artigo() + theme(strip.background = element_blank(), strip.text = element_blank())
+
+g
+# ggsave("calibration_plots.png", g, height = 10, width = 14, units = 'cm', dpi = 600)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+set.seed(12345)
+indextest <- createDataPartition(shinkai[[spp]], times = 25, p = 0.7)
+
+e.models <- evaluate(c(ens$model.list, list(ens)), shinkai, testindex = indextest, summaryFunction = twoClassSDMs)
+
+# plot(e.models)
+```
+
+
+
+```{r}
+tmp <- copy(e.models$eval)
+tmp[, method := factor(method, levels = c("rf", "brt", "maxent", "gam", "ann", ""),
+                       labels = c("RF", "BRT", "MaxEnt", "GAM", "ANN", "Ensemble"))]
+tmp[, metric := factor(metric, levels = c("ROC", "PRG", "Sens", "Spec", "TSS"))]
+tmp[, data := factor(data, levels = c("train", "test"), labels = c("Validation", "Test"))]
+
+minmax <- c(min(tmp$value - tmp$error), max(tmp$value - tmp$error))
+  tmp_names <- c("AUC<sub>ROC</sub>", "AUC<sub>PRG</sub>", "Sensitivity", "Specificity", "TSS")
+
+tmp <- split(tmp, tmp$metric)
+
+```
+
+
+```{r}
+g <- list()
+for (i in 1:length(tmp)) {
+  g[[i]] <- ggplot(tmp[[i]], aes(x = method, y = value, color = data)) +
+    geom_point(stat = "identity", position = position_dodge(0.5)) +
+    geom_errorbar(aes(ymin = value - error, ymax = value + error),
+                               position = position_dodge(0.5), width = 0.25) +
+    scale_color_manual(values = c("#DF8E0C", "#12A0AB")) +
+    scale_y_continuous(limits = minmax) +
+    labs(y = tmp_names[i], tag = letters[i]) +
+    theme_artigo() + theme(axis.title.x = element_blank(), plot.tag.position = "topleft", axis.title.y = element_markdown(),
+                           legend.position = "none", panel.grid.major.y = element_line(color = "gray", linetype = 2),
+                           panel.grid.minor.y = element_line(color = "gray", linetype = 2),
+                           panel.grid.major.x = element_line(color = "gray", linetype = "dotted"))
+    g[[i]] <- if (i %in% 3:5) g[[i]] + theme(axis.text.x = element_text(angle = 45, hjust = 1)) else g[[i]] + theme(axis.text.x = element_blank())
+    if (i %in% c(2,3,5)) g[[i]] <- g[[i]] + theme(axis.text.y = element_blank())
+    if (i %in% 1:3) g[[i]] <- g[[i]] + theme(plot.margin = margin(b = -10, unit = "mm"))
+}
+
+
+leg <- ggplot(tmp[[1]], aes(x = method, y = value, color = data)) +
+    geom_point() + geom_line() + scale_color_manual(values = c("#DF8E0C", "#12A0AB")) +
+  theme(legend.position = "top", legend.key = element_blank(), legend.title = element_blank(),
+        legend.text = element_text(margin = margin(r = 5, unit = 'mm'))) 
+leg <- wrap_elements(ggpubr::get_legend(leg))
+
+
+gg <- (g[[3]] / plot_spacer()) + plot_layout(heights = c(.55, .45))
+gg <- (wrap_plots(g[c(1,2,4,5)], ncol = 2) | gg) + plot_layout(widths = c(2.2/3, 1/3))
+gg <- (leg / gg) + plot_layout(heights = c(.02, 1))
+
+# ggsave("evaluation.png", gg, height = 10, width = 14, units = 'cm', dpi = 600)
+gg
+```
+
+
+
+# Post-hoc test for comparisson
+```{r}
+library(scmamp)
+
+x = melt(e.models$resample[data == "train"], id = c("method", "Resample"), measure.vars = 4:8)
+x = dcast(x, variable + Resample ~ method, value.var = "value")
+x = x[, c(1:5,7,6)]
+colnames(x)[3:7] <- c("RF", "BRT", "MaxEnt", "GAM", "ANN")
+
+# print(multipleComparisonTest(x, algorithms = c("rf", "brt", "maxent", "gam", "ann"), group.by = "variable", test = "friedman", correct = "finner"))
+# cat("\n\n")
+
+tmp_metrics <- levels(e.models$eval$metric)
+tmp_names = c("AUC<sub>ROC</sub>", "AUC<sub>PRG</sub>", "Sensitivity", "Specificity", "TSS")
+out <- data.frame(metric = tmp_metrics, pvalue = 0)
+
+plot_labels <- function(x) sapply(x, function(x) switch(findInterval(x, c(0.001, 0.01, 0.05)) + 1, 
+                                  "***", "**", "*", sprintf("%.2f", x))
+)
+
+g <- list()
+for (i in 1:length(tmp_metrics)) {
+  xtmp = x[variable==tmp_metrics[i], 3:7]
+  out[i, 2] = multipleComparisonTest(data=xtmp, test="aligned ranks")$p.value
+  xtmp2 = postHocTest(xtmp, test = "friedman", correct = "shaffer")$corrected.pval
+  xtmp2 = reshape2::melt(xtmp2, na.rm = TRUE)
+  
+  
+  g[[i]] <- ggplot(xtmp2, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+    geom_text(aes(label = plot_labels(value))) +
+      scale_fill_gradientn(
+        limits = c(0,1),
+        colours = COL1('YlOrBr', 100), 
+        values = scales::rescale(c(0, 0.1, 1))) +
+    labs(fill = "p-value", title = tmp_names[i]) +
+    theme_artigo() +
+    theme(axis.title = element_blank(), plot.title = element_markdown(face = "bold", hjust = 0.5))
+  
+  # print(postHocTest(x[variable == i], algorithms = c("rf", "brt", "maxent", "gam", "ann"), test = "friedman", correct = "shaffer")$corrected.pval)
+  # cat("\n\n")
+}
+
+# write.csv(out, "friedman.csv", row.names = FALSE)
+out
+
+gg <- wrap_plots(g, ncol = 2) + plot_layout(guides = "collect")
+# ggsave("friedman.png", gg, height = 16, width = 14, units = 'cm', dpi = 600)
+gg
+```
+
+
+# Variable importance
+```{r}
+# plot(v.models, scale = FALSE)
+plot(v.models, scale = TRUE)
+```
+
+
+
+## plot
+
+```{r}
+tmp <- summary(v.models, scale = FALSE)
+
+ 
+tmp[, method := factor(method, levels = levels(tmp$method)[c(1, 2, 3, 5, 4)],
+                       labels = c("RF", "BRT", "MaxEnt", "GAM", "ANN"))]
+tmp_names <- paste0(levels(tmp$method), "  ")
+
+new.names <- c('Broad BPI', 'Northerness', 'Curvature', 'Depth', 'Fine BPI', 'Rift Distance', 'Easterness', 'Slope', 'Rugosity')
+new.order <- c(4, 8, 1, 5, 6, 2, 7, 9, 3)
+
+tmp[, variable := factor(variable, levels = names(r.hybis), labels = new.names[new.order])]
+
+tmp <- split(tmp, tmp$method)
+```
+
+
+```{r}
+g <- list()
+for (i in 1:length(tmp)) {
+  g[[i]] <- ggplot(tmp[[i]], aes(x = importance, y = variable)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(xmin = importance - error, xmax = importance + error), width = 0.25) +
+  theme_artigo() + coord_cartesian(clip = "off") +
+  scale_y_discrete(limits=rev, expand = expansion(c(0.1, 0.15))) +
+  scale_x_continuous(expand = expansion(c(0, 0.05))) + #, limits = c(0, 1)
+  geom_text(label =  letters[i],
+            x = -Inf, y = Inf, hjust = 1.5, vjust = 0.5, size = 9.5/ggplot2:::.pt, fontface = "bold") +
+  geom_text(label = tmp_names[i],
+            x = Inf, y = -Inf, hjust = 1, vjust = -1, size = 8/ggplot2:::.pt) +
+  theme(axis.title = element_blank())
+  # if (i %in% 1:2) g[[i]] <- g[[i]] + theme(axis.text.x = element_blank())
+  if (i %in% c(2,3,5)) g[[i]] <- g[[i]] + theme(axis.text.y = element_blank())
+}
+
+
+p_lab <- 
+  ggplot() + 
+  annotate(geom = "text", x = 1, y = 1, label = "Scaled importance",
+           size = 8/ggplot2:::.pt, fontface = "bold") +
+  coord_cartesian(clip = "off")+
+  theme_void()
+
+gg <- wrap_plots(g, ncol = 3)
+gg <- (gg / p_lab) + plot_layout(heights = c(1, .02))
+
+# ggsave("importance.png", gg, height = 10, width = 14, units = 'cm', dpi = 600)
+gg
+```
+
+
+## save table
+```{r}
+tmp <- summary(v.models, scale = FALSE)
+
+ 
+tmp[, method := factor(method, levels = levels(tmp$method)[c(1, 2, 3, 5, 4)],
+                       labels = c("RF", "BRT", "MaxEnt", "GAM", "ANN"))]
+
+new.names <- c('Broad BPI', 'Northerness', 'Curvature', 'Depth', 'Fine BPI', 'Rift Distance', 'Easterness', 'Slope', 'Rugosity')
+new.order <- c(4, 8, 1, 5, 6, 2, 7, 9, 3)
+
+tmp[, variable := factor(variable, levels = names(r.hybis), labels = new.names[new.order])]
+
+tmp <- dcast(tmp, variable ~ method, value.var = "importance")
+tmp <- tmp[, lapply(.SD, round, digits = 3), by = variable, .SDcols = -"variable"]
+
+# fwrite(tmp, "importance.csv")
+```
+
+
+# Response
+```{r}
+plot(r.models)
+```
+
+
+
+```{r}
+tmp <- copy(r.models$num)
+
+tmp[, method := factor(method, levels = levels(tmp$method)[c(1, 2, 3, 5, 4)],
+                       labels = c("RF", "BRT", "MaxEnt", "GAM", "ANN"))]
+# tmp_names <- paste0(levels(tmp$method), "  ")
+
+new.names <- c('Broad BPI', 'Northerness', 'Curvature', 'Depth', 'Fine BPI', 'Rift Distance', 'Easterness', 'Slope', 'Rugosity')
+new.order <- c(4, 8, 1, 5, 6, 2, 7, 9, 3)
+new.names.order <- new.names[new.order]
+
+tmp[, variable := factor(variable, levels = names(r.hybis), labels = new.names.order)]
+
+tmp <- split(tmp, tmp$variable)
+
+tmp2 <- r.models$quantiles[, new.order]
+```
+
+
+
+```{r}
+g <- list()
+for (i in 1:length(tmp)) {
+  g[[i]] <- ggplot(tmp[[i]], aes(x=predictors, y=response, color=method)) +
+    geom_line(show.legend = FALSE) +
+    geom_rug(aes(x = q), data = data.frame(q = tmp2[, i]), inherit.aes = FALSE) +
+    scale_y_continuous(limits = c(0, 1)) +
+    labs(tag = letters[i]) + xlab(new.names.order[i]) +
+    theme_artigo() + theme(axis.title.y = element_blank(), plot.tag.position = "topleft")
+  if (i %in% c(2,3,5,6,8,9)) g[[i]] <- g[[i]] + theme(axis.text.y = element_blank())
+}
+
+
+p_lab <- 
+  ggplot() + 
+  annotate(geom = "text", x = 1, y = 1, label = "Response", angle = 90,
+           size = 8/ggplot2:::.pt, fontface = "bold") +
+  coord_cartesian(clip = "off")+
+  theme_void()
+
+
+leg <- ggplot(tmp[[1]], aes(x=predictors, y=response, color=method)) +
+    geom_line() + 
+  theme(legend.position = "top", legend.key = element_blank(), legend.title = element_blank(),
+        legend.text = element_text(margin = margin(r = 5, unit = 'mm'))) 
+leg <- wrap_elements(ggpubr::get_legend(leg))
+
+
+gg <- wrap_plots(g, ncol = 3) + plot_layout(guides = "collect")
+gg <- (p_lab | gg) + plot_layout(widths = c(.02, 1))
+gg <- (leg / gg) + plot_layout(heights = c(.02, 1))
+
+# ggsave("response.png", gg, height = 10, width = 14, units = 'cm', dpi = 600)
+gg
+```
+
+
+### Accuracy metric for discussion
+```{r}
+summaryTest <- function(data, lev = NULL, model = NULL) {
+  obs <- data[, "obs"]
+  pred <- data[, "pred"]
+  pred <- factor(pred, levels = levels(obs))
+  x <- table(obs, pred)
+  out <- (x[1,1] + x[2,2]) / length(pred)
+  names(out) <- "Acc"
+  return(out)
+}
+
+e.models2 <- evaluate(c(ens$model.list, list(ens)), shinkai, testindex = indextest, summaryFunction = summaryTest)
+
+e.models2$resample[, .(Acc = mean(Acc)), by = .(data)]
+```
+
+
+### threshold values
+```{r}
+c(sapply(ens$model.list, `[[`, "thr"), ensemble = ens$thr)
+```
+
+
+
+```{r}
+stopCluster(cl)
+registerDoSEQ()
+```
+
+
+
